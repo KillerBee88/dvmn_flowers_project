@@ -1,10 +1,10 @@
 from django.db import models
 
 TYPES = [
+    ("на день рождения", "на день рождения"),
     ("на свадьбу", "на свадьбу"),
     ("в школу", "в школу"),
     ("без повода", "без повода"),
-    ("другой повод", "другой повод")
 ]
 
 
@@ -54,7 +54,8 @@ class Order(models.Model):
                                 null=True,
                                 verbose_name="Букет",
                                 related_name="orders")
-    address = models.TextField(verbose_name="Адресс заказа")
+    address = models.TextField(verbose_name="Адрес заказа")
+    phone = models.IntegerField(verbose_name="Телефон", blank=True,)
     delivery_date = models.DateField(verbose_name="Дата доставки")
     delivery_time = models.TimeField(verbose_name="Время доставки")
 
