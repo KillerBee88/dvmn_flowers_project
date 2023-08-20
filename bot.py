@@ -153,6 +153,8 @@ def get_user_name_surname(message):
     markup.add(btn)
     msg  = bot.send_message(message.from_user.id, "Введите ваши ФИО:", reply_markup=markup)
     bot.register_next_step_handler(msg, get_address)
+    order['bouquet'] = bouquets[current_index]
+
 
 def get_address(message):
     order['name'] = message.text
@@ -191,7 +193,24 @@ def get_delivery_time(message):
 
 
 def makeorder(message):
-    order['delivery_time'] = message.text
+    client_id = message.from_user.id
+    delivery_time = message.text
+
+    client, created = Client.objects.get_or_create(tg_id=client_id, defaults={'username': 'Unknown'})
+
+    selected_bouquet = Bouquet.objects.get(id=order['bouquet'].id)
+
+
+    new_order = Order(
+        client=client,
+        bouquet=selected_bouquet,
+        address=order['address'],
+        delivery_date=order['delivery_date'],
+        phone=order['phone'],
+        delivery_time=delivery_time
+    )
+    new_order.save()
+
     markup = types.InlineKeyboardMarkup()
     btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
     markup.add(btn)
