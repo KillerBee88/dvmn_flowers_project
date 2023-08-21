@@ -79,6 +79,8 @@ def main_menu_2(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('событие'))
 def choose_price(call):
+    order['type'] = call.data[8:]
+    print(order['type'])
     markup = types.InlineKeyboardMarkup()
     btn1 = types.InlineKeyboardButton(callback_data='цена 500', text='~500')
     btn2 = types.InlineKeyboardButton(callback_data='цена 1000', text='~1000')
@@ -92,16 +94,29 @@ def choose_price(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('цена'))
 def choose_bouquet_or_consult(call):
+    print(order['type'])
     global bouquets, current_index
     current_index = 0
-    if call.data == 'цена любая':
-        bouquets = Bouquet.objects.all()
+    if call.data == 'цена любая' or call.data == 'цена':
+        selected_price = 0
+    if call.data == 'цена большая':
+        selected_price = 2500
     else:
-        selected_price = int(call.data[4:])
+        try:
+            selected_price = int(call.data[4:])
+        except :
+            selected_price = 0
+    if order['type'] != '':
         bouquets = Bouquet.objects.filter(
-        Q(price__lte=selected_price) |
+        Q(price__gte=selected_price, type=order['type']) |
         Q(price__isnull=True)
     )
+    else:
+        bouquets = Bouquet.objects.filter(
+        Q(price__gte=selected_price) |
+        Q(price__isnull=True)
+    )
+
 
     current_bouquet = bouquets[current_index]
     bot.send_photo(call.from_user.id, photo=current_bouquet.image)
@@ -168,6 +183,7 @@ def my_orders_callback(call):
 '''консультация'''
 @bot.callback_query_handler(func=lambda call: call.data.startswith('консультация'))
 def get_phonenumber(call):
+    order['type'] = ''
     markup = types.InlineKeyboardMarkup()
     msg = bot.send_message(call.from_user.id, 'Укажите номер телефона, и наш флорист перезвонит вам в течение 20 минут)', reply_markup=markup)
     bot.register_next_step_handler(msg, call_consult)
@@ -178,7 +194,11 @@ def call_consult(call):
         pasrephone = phonenumbers.parse(call.text, "RU")
         if not(phonenumbers.is_valid_number(pasrephone)):
             raise ZeroDivisionError
-        bot.send_message(call.from_user.id, "Флорист скоро свяжется с вами. А пока можете присмотреть что-нибудь из готовой коллекции:")
+        markup = types.InlineKeyboardMarkup()
+        btn1 = types.InlineKeyboardButton(callback_data='цена',
+                                          text='Выбрать букеты')
+        markup.add(btn1)
+        bot.send_message(call.from_user.id, "Флорист скоро свяжется с вами. А пока можете присмотреть что-нибудь из готовой коллекции:", reply_markup=markup)
         bot.register_next_step_handler(call, choose_bouquet_or_consult)
     except:
         markup = types.InlineKeyboardMarkup()
