@@ -1,6 +1,8 @@
 import telebot
 import os
 import datetime
+import sqlite3
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dvmn_flowers_project.settings')
 
 import django
@@ -9,12 +11,17 @@ django.setup()
 from telebot import types
 from dotenv import load_dotenv
 from flowerapp.models import Client, Bouquet, Order
-from datetime import time
+from datetime import datetime
+from django.db.models import Q
+import itertools
 
 
 load_dotenv()
 bot = telebot.TeleBot(os.environ["TG_TOKEN"])
 order ={}
+
+bouquets = []
+current_index = 0
 
 @bot.message_handler(commands=['start'])
 def main_menu(message):
@@ -56,7 +63,7 @@ def main_menu_2(message):
      types.InlineKeyboardButton(callback_data='событие на свадьбу', text='на свадьбу'),
      types.InlineKeyboardButton(callback_data='событие в школу', text='в школу'),
      types.InlineKeyboardButton(callback_data='без повода', text='без повода'),
-     types.InlineKeyboardButton(callback_data='Смотреть заказы',text='Смотреть заказы')]
+     types.InlineKeyboardButton(callback_data='Мои заказы', text='Мои заказы')]
     if Order.objects.filter(client=client):
         for button in second:
             markup.add(button)
@@ -83,25 +90,75 @@ def choose_price(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('цена'))
 def choose_bouquet_or_consult(call):
+    selected_price = int(call.data[4:])
+
+    global bouquets, current_index
+    current_index = 0
+    bouquets = Bouquet.objects.filter(
+        Q(price__lte=selected_price) |
+        Q(price__isnull=True)
+    )
+
+    current_bouquet = bouquets[current_index]
+    bot.send_message(call.from_user.id, f'{current_bouquet.name}\nЦена: {current_bouquet.price}р.')
+    bot.send_message(call.from_user.id, current_bouquet.get_info())
+
     markup = types.InlineKeyboardMarkup()
     btn1 = types.InlineKeyboardButton(callback_data='Заказать букет', text='Заказать букет')
     btn2 = types.InlineKeyboardButton(callback_data='Следующий букет', text='Следующий букет')
     btn3 = types.InlineKeyboardButton(callback_data='консультация', text='Заказать консультацию')
     btn4 = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
-    markup.add(btn1, btn2, btn3, btn4)
-   
-    # if int(call.data[4:]):
-    #    print(int(call.data[4:]))
-    # bouquets = Bouquet.objects.filter(price = order['price'], type = order['type'])
-    #for bouquet in bouquets.iterator():
-    #    markup.add(types.InlineKeyboardButton(callback_data=f'Выбран торт {bouquet.cake_name}',
-    #                                          text=bouquet.name))
-    #    bot.send_photo(call.from_user.id, photo=bouquet.image)
-    #    bot.send_message(call.from_user.id, f'{bouquet.name}\nЦена: {bouquet.price}р.')
-    bot.send_message(call.from_user.id, 'Описание букета с картинкой + цветочный состав и стоимость (Этот букет несет в себе всю нежность ваших чувств и не способен оставить равнодушных ни одного сердца!)')
+    btn5 = types.InlineKeyboardButton(callback_data='Мои заказы', text='Мои заказы')
+    markup.add(btn1, btn2, btn3, btn4, btn5)
+
     bot.send_message(call.from_user.id, 'Хотите что-то еще более уникальное? Подберите другой букет из нашей коллекции или закажите консультацию флориста)', reply_markup=markup)
 
+@bot.callback_query_handler(func=lambda call: call.data == 'Следующий букет')
+def show_next_bouquet(call):
+    global bouquets, current_index
 
+    current_index += 1
+
+    if current_index >= len(bouquets):
+        current_index = 0
+
+    next_bouquet = bouquets[current_index]
+    bot.send_message(call.from_user.id, f'{next_bouquet.name}\nЦена: {next_bouquet.price}р.')
+    bot.send_message(call.from_user.id, next_bouquet.get_info())
+
+    markup = types.InlineKeyboardMarkup()
+    btn1 = types.InlineKeyboardButton(callback_data='Заказать букет', text='Заказать букет')
+    btn2 = types.InlineKeyboardButton(callback_data='Следующий букет', text='Следующий букет')
+    btn3 = types.InlineKeyboardButton(callback_data='консультация', text='Заказать консультацию')
+    btn4 = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
+    btn5 = types.InlineKeyboardButton(callback_data='Мои заказы', text='Мои заказы')
+    markup.add(btn1, btn2, btn3, btn4, btn5)
+
+    bot.send_message(call.from_user.id, 'Хотите что-то еще более уникальное? Подберите другой букет из нашей коллекции или закажите консультацию флориста)', reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data == 'Мои заказы')
+def my_orders_callback(call):
+    client_id = call.from_user.id
+    client = Client.objects.get(tg_id=client_id)
+    orders = Order.objects.filter(client=client).order_by('delivery_date')
+    
+    if orders:
+        markup = types.InlineKeyboardMarkup()
+        btn1 = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️',
+                                          text='Вернуться в главное меню ⬅️')
+        markup.add(btn1)
+        bot.send_message(client_id, 'Ваши заказы.', reply_markup=markup)
+
+        for order in orders:
+            order_str = f'Заказ №{order.id}\n' \
+                        f'Букет: {order.bouquet}\n' \
+                        f'Адрес: {order.address}\n' \
+                        f'Дата доставки: {order.delivery_date}\n' \
+                        f'Телефон: {order.phone}\n' \
+                        f'Время доставки: {order.delivery_time}\n'
+            bot.send_message(client_id, order_str, reply_markup=markup)
+    else:
+        bot.send_message(client_id, "У вас пока нет заказов.") 
 '''консультация'''
 @bot.callback_query_handler(func=lambda call: call.data.startswith('консультация'))
 def get_phonenumber(call):
@@ -123,6 +180,8 @@ def get_user_name_surname(message):
     markup.add(btn)
     msg  = bot.send_message(message.from_user.id, "Введите ваши ФИО:", reply_markup=markup)
     bot.register_next_step_handler(msg, get_address)
+    order['bouquet'] = bouquets[current_index]
+
 
 def get_address(message):
     order['name'] = message.text
@@ -161,7 +220,24 @@ def get_delivery_time(message):
 
 
 def makeorder(message):
-    order['delivery_time'] = message.text
+    client_id = message.from_user.id
+    delivery_time = message.text
+
+    client, created = Client.objects.get_or_create(tg_id=client_id, defaults={'username': 'Unknown'})
+
+    selected_bouquet = Bouquet.objects.get(id=order['bouquet'].id)
+
+
+    new_order = Order(
+        client=client,
+        bouquet=selected_bouquet,
+        address=order['address'],
+        delivery_date=order['delivery_date'],
+        phone=order['phone'],
+        delivery_time=delivery_time
+    )
+    new_order.save()
+
     markup = types.InlineKeyboardMarkup()
     btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
     markup.add(btn)
