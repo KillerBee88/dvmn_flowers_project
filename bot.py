@@ -152,12 +152,16 @@ def get_delivery_date(message):
 
 
 def get_delivery_time(message):
-    order['delivery_date'] = message.text
-    markup = types.InlineKeyboardMarkup()
-    btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
-    markup.add(btn)
-    msg = bot.send_message(message.from_user.id, "Введите время доставки в формате час:минуты:секунды (например 15:00:00):", reply_markup=markup)
-    bot.register_next_step_handler(msg, makeorder)
+    if datetime.strptime(message.text, '%d-%m-%y'):
+        bot.send_message(message.from_user.id, "Неправильно ввели дату, попробуйте ещё раз!")
+        get_delivery_date(message)
+    else:
+        order['delivery_date'] = message.text
+        markup = types.InlineKeyboardMarkup()
+        btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
+        markup.add(btn)
+        msg = bot.send_message(message.from_user.id, "Введите время доставки в формате час:минуты:секунды (например 15:00:00):", reply_markup=markup)
+        bot.register_next_step_handler(msg, makeorder)
 
 
 def makeorder(message):

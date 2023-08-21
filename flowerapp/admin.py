@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Order, Bouquet, Client
+from .models import Order, Bouquet, Client, Courier
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
@@ -8,6 +8,11 @@ class OrderAdmin(admin.ModelAdmin):
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
+    list_display = ["tg_id", "username"]
+
+
+@admin.register(Courier)
+class CourierAdmin(admin.ModelAdmin):
     list_display = ["tg_id", "username"]
 
 

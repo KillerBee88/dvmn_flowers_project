@@ -65,3 +65,16 @@ class Order(models.Model):
     class Meta:
         verbose_name = "Заказ"
         verbose_name_plural = "Заказы"
+
+
+class Courier(models.Model):
+    """Данные курьера (id и username в telegram)."""
+    tg_id = models.IntegerField(verbose_name="ID пользователя")
+    username = models.CharField(max_length=200, verbose_name="Имя пользователя")
+
+    def __str__(self):
+        return self.username
+
+    class Meta:
+        verbose_name = "Курьер"
+        verbose_name_plural = "Курьеры"
