@@ -1,6 +1,8 @@
+import phonenumbers
 import telebot
 import os
 import datetime
+from datetime import datetime
 import sqlite3
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dvmn_flowers_project.settings')
@@ -11,7 +13,6 @@ django.setup()
 from telebot import types
 from dotenv import load_dotenv
 from flowerapp.models import Client, Bouquet, Order
-from datetime import datetime
 from django.db.models import Q
 import itertools
 
@@ -51,6 +52,7 @@ def main_menu(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('Вернуться в главное'))
 def main_menu_2(message):
+    order = {}
     client, _ = Client.objects.get_or_create(tg_id=message.from_user.id,
                                             username=message.from_user.username)
     markup = types.InlineKeyboardMarkup()
@@ -62,7 +64,7 @@ def main_menu_2(message):
     second = [types.InlineKeyboardButton(callback_data='событие на день рождения', text='на день рождения'), 
      types.InlineKeyboardButton(callback_data='событие на свадьбу', text='на свадьбу'),
      types.InlineKeyboardButton(callback_data='событие в школу', text='в школу'),
-     types.InlineKeyboardButton(callback_data='без повода', text='без повода'),
+     types.InlineKeyboardButton(callback_data='событие без повода', text='без повода'),
      types.InlineKeyboardButton(callback_data='Мои заказы', text='Мои заказы')]
     if Order.objects.filter(client=client):
         for button in second:
@@ -83,23 +85,26 @@ def choose_price(call):
     btn3 = types.InlineKeyboardButton(callback_data='цена 2000', text='~2000')
     btn4 = types.InlineKeyboardButton(callback_data='цена большая', text='~больше')
     btn5 = types.InlineKeyboardButton(callback_data='цена любая', text='посмотреть все')
-    btn5 = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
-    markup.add(btn1, btn2, btn3, btn4, btn5)
+    btn6 = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
+    markup.add(btn1, btn2, btn3, btn4, btn5, btn6)
     bot.send_message(call.from_user.id, 'На какую сумму рассчитываете?', reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('цена'))
 def choose_bouquet_or_consult(call):
-    selected_price = int(call.data[4:])
-
     global bouquets, current_index
     current_index = 0
-    bouquets = Bouquet.objects.filter(
+    if call.data == 'цена любая':
+        bouquets = Bouquet.objects.all()
+    else:
+        selected_price = int(call.data[4:])
+        bouquets = Bouquet.objects.filter(
         Q(price__lte=selected_price) |
         Q(price__isnull=True)
     )
 
     current_bouquet = bouquets[current_index]
+    bot.send_photo(call.from_user.id, photo=current_bouquet.image)
     bot.send_message(call.from_user.id, f'{current_bouquet.name}\nЦена: {current_bouquet.price}р.')
     bot.send_message(call.from_user.id, current_bouquet.get_info())
 
@@ -108,8 +113,8 @@ def choose_bouquet_or_consult(call):
     btn2 = types.InlineKeyboardButton(callback_data='Следующий букет', text='Следующий букет')
     btn3 = types.InlineKeyboardButton(callback_data='консультация', text='Заказать консультацию')
     btn4 = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
-    btn5 = types.InlineKeyboardButton(callback_data='Мои заказы', text='Мои заказы')
-    markup.add(btn1, btn2, btn3, btn4, btn5)
+    
+    markup.add(btn1, btn2, btn3, btn4)
 
     bot.send_message(call.from_user.id, 'Хотите что-то еще более уникальное? Подберите другой букет из нашей коллекции или закажите консультацию флориста)', reply_markup=markup)
 
@@ -123,6 +128,7 @@ def show_next_bouquet(call):
         current_index = 0
 
     next_bouquet = bouquets[current_index]
+    bot.send_photo(call.from_user.id, photo=next_bouquet.image)
     bot.send_message(call.from_user.id, f'{next_bouquet.name}\nЦена: {next_bouquet.price}р.')
     bot.send_message(call.from_user.id, next_bouquet.get_info())
 
@@ -168,9 +174,18 @@ def get_phonenumber(call):
 
 
 def call_consult(call):
-    phonenumber = call.text
-    bot.send_message(call.from_user.id, "Флорист скоро свяжется с вами. А пока можете присмотреть что-нибудь из готовой коллекции:")
-    choose_bouquet_or_consult(call)
+    try:
+        pasrephone = phonenumbers.parse(call.text, "RU")
+        if not(phonenumbers.is_valid_number(pasrephone)):
+            raise ZeroDivisionError
+        bot.send_message(call.from_user.id, "Флорист скоро свяжется с вами. А пока можете присмотреть что-нибудь из готовой коллекции:")
+        bot.register_next_step_handler(call, choose_bouquet_or_consult)
+    except:
+        markup = types.InlineKeyboardMarkup()
+        bot.send_message(call.from_user.id, "Неправильно ввели телефон, попробуйте ещё раз:", reply_markup=markup)
+        get_phonenumber(call)
+   
+    
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('Заказать букет'))
@@ -193,7 +208,8 @@ def get_address(message):
 
 
 def get_phone(message):
-    order['address'] = message.text
+    if 'address' not in order:
+        order['address'] = message.text
     markup = types.InlineKeyboardMarkup()
     btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
     markup.add(btn)
@@ -202,50 +218,82 @@ def get_phone(message):
 
 
 def get_delivery_date(message):
-    order['phone'] = message.text
+    try:
+        pasrephone = phonenumbers.parse(message.text, "RU")
+        if not(phonenumbers.is_valid_number(pasrephone)):
+            raise ZeroDivisionError
+        if 'phone' not in order:
+            order['phone'] = message.text
+        markup = types.InlineKeyboardMarkup()
+        btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
+        markup.add(btn)
+        msg  = bot.send_message(message.from_user.id, "Введите дату доставки в формате год-месяц-день (например 2023-12-02):", reply_markup=markup)
+        bot.register_next_step_handler(msg, get_delivery_time)
+    except:
+        markup = types.InlineKeyboardMarkup()
+        bot.send_message(message.from_user.id, "Неправильно ввели телефон, попробуйте ещё раз:", reply_markup=markup)
+        get_phone(message)
+
+
+def get_delivery_date_second(message):
     markup = types.InlineKeyboardMarkup()
     btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
     markup.add(btn)
-    msg  = bot.send_message(message.from_user.id, "Введите дату доставки в формате год-месяц-день (например 2023-08-16):", reply_markup=markup)
+    msg  = bot.send_message(message.from_user.id, "Введите дату доставки в формате год-месяц-день (например 2023-12-02):", reply_markup=markup)
     bot.register_next_step_handler(msg, get_delivery_time)
 
-
 def get_delivery_time(message):
-    if datetime.strptime(message.text, '%d-%m-%y'):
-        bot.send_message(message.from_user.id, "Неправильно ввели дату, попробуйте ещё раз!")
-        get_delivery_date(message)
-    else:
+    try:
+        datetime.strptime(message.text, '%Y-%m-%d') 
         order['delivery_date'] = message.text
         markup = types.InlineKeyboardMarkup()
         btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
         markup.add(btn)
-        msg = bot.send_message(message.from_user.id, "Введите время доставки в формате час:минуты:секунды (например 15:00:00):", reply_markup=markup)
+        msg = bot.send_message(message.from_user.id, "Введите время доставки в формате час:минуты (например 15:00):", reply_markup=markup)
         bot.register_next_step_handler(msg, makeorder)
+    except ValueError:
+        bot.send_message(message.from_user.id, "Неправильно ввели дату, попробуйте ещё раз!")
+        get_delivery_date_second(message)
 
-
-def makeorder(message):
-    client_id = message.from_user.id
-    delivery_time = message.text
-
-    client, created = Client.objects.get_or_create(tg_id=client_id, defaults={'username': 'Unknown'})
-
-    selected_bouquet = Bouquet.objects.get(id=order['bouquet'].id)
-
-
-    new_order = Order(
-        client=client,
-        bouquet=selected_bouquet,
-        address=order['address'],
-        delivery_date=order['delivery_date'],
-        phone=order['phone'],
-        delivery_time=delivery_time
-    )
-    new_order.save()
-
+def get_delivery_time_second(message):
     markup = types.InlineKeyboardMarkup()
     btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
     markup.add(btn)
-    bot.send_message(message.from_user.id, "Отлично! Заказ создан.", reply_markup=markup)
+    msg = bot.send_message(message.from_user.id, "Введите время доставки в формате час:минуты (например 15:00):", reply_markup=markup)
+    bot.register_next_step_handler(msg, makeorder)
+        
+
+def makeorder(message):
+    try:
+        datetime.strptime(message.text, '%H:%M') 
+        order['delivery_time'] = message.text
+        client_id = message.from_user.id
+        delivery_time = message.text
+
+        client, created = Client.objects.get_or_create(tg_id=client_id, defaults={'username': 'Unknown'})
+        selected_bouquet = Bouquet.objects.get(id=order['bouquet'].id) 
+        
+        new_order = Order(
+            client=client,
+            bouquet=selected_bouquet,
+            address=order['address'],
+            delivery_date=order['delivery_date'],
+            phone=order['phone'],
+            delivery_time=delivery_time
+        )
+        new_order.save()
+
+        markup = types.InlineKeyboardMarkup()
+        btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
+        markup.add(btn)
+        bot.send_message(message.from_user.id, "Отлично! Заказ создан.", reply_markup=markup)
+    except ValueError:
+        bot.send_message(message.from_user.id, "Неправильно ввели время, попробуйте ещё раз!")
+        get_delivery_time_second(message)
+
+
+
+    
 
 def run_bot():
     bot.polling(none_stop=True, interval=0)
