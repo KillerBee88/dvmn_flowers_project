@@ -1,8 +1,10 @@
+from urllib.parse import urlencode
 import phonenumbers
 import telebot
 import os
 import datetime
 from datetime import datetime
+
 import sqlite3
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dvmn_flowers_project.settings')
@@ -85,8 +87,8 @@ def choose_price(call):
     btn1 = types.InlineKeyboardButton(callback_data='цена 500', text='~500')
     btn2 = types.InlineKeyboardButton(callback_data='цена 1000', text='~1000')
     btn3 = types.InlineKeyboardButton(callback_data='цена 2000', text='~2000')
-    btn4 = types.InlineKeyboardButton(callback_data='цена большая', text='~больше')
-    btn5 = types.InlineKeyboardButton(callback_data='цена любая', text='посмотреть все')
+    btn4 = types.InlineKeyboardButton(callback_data='цена 4000', text='~больше')
+    btn5 = types.InlineKeyboardButton(callback_data='цена 0', text='посмотреть все')
     btn6 = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
     markup.add(btn1, btn2, btn3, btn4, btn5, btn6)
     bot.send_message(call.from_user.id, 'На какую сумму рассчитываете?', reply_markup=markup)
@@ -97,15 +99,11 @@ def choose_bouquet_or_consult(call):
     print(order['type'])
     global bouquets, current_index
     current_index = 0
-    if call.data == 'цена любая' or call.data == 'цена':
+    
+    try:
+        selected_price = int(call.data[4:])
+    except :
         selected_price = 0
-    if call.data == 'цена большая':
-        selected_price = 2500
-    else:
-        try:
-            selected_price = int(call.data[4:])
-        except :
-            selected_price = 0
     if order['type'] != '':
         bouquets = Bouquet.objects.filter(
         Q(price__gte=selected_price, type=order['type']) |
@@ -119,7 +117,8 @@ def choose_bouquet_or_consult(call):
 
 
     current_bouquet = bouquets[current_index]
-    bot.send_photo(call.from_user.id, photo=current_bouquet.image)
+    
+    bot.send_photo(call.from_user.id, photo=current_bouquet.image.open(mode='rb'))
     bot.send_message(call.from_user.id, f'{current_bouquet.name}\nЦена: {current_bouquet.price}р.')
     bot.send_message(call.from_user.id, current_bouquet.get_info())
 
@@ -133,6 +132,36 @@ def choose_bouquet_or_consult(call):
 
     bot.send_message(call.from_user.id, 'Хотите что-то еще более уникальное? Подберите другой букет из нашей коллекции или закажите консультацию флориста)', reply_markup=markup)
 
+
+
+def choose_bouquet_after_consult(call):
+    
+    global bouquets, current_index
+    current_index = 0
+
+    bouquets = Bouquet.objects.all()
+
+
+    current_bouquet = bouquets[current_index]
+    #with open(current_bouquet.image.url , 'rb') as file:
+    #    bot.send_photo(call.from_user.id , file)
+    bot.send_photo(call.from_user.id, photo=current_bouquet.image.open(mode='rb'))
+    #bot.send_photo(call.from_user.id, photo=current_bouquet.image)
+    bot.send_message(call.from_user.id, f'{current_bouquet.name}\nЦена: {current_bouquet.price}р.')
+    bot.send_message(call.from_user.id, current_bouquet.get_info())
+
+    markup = types.InlineKeyboardMarkup()
+    btn1 = types.InlineKeyboardButton(callback_data='Заказать букет', text='Заказать букет')
+    btn2 = types.InlineKeyboardButton(callback_data='Следующий букет', text='Следующий букет')
+    btn3 = types.InlineKeyboardButton(callback_data='консультация', text='Заказать консультацию')
+    btn4 = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
+    
+    markup.add(btn1, btn2, btn3, btn4)
+
+    bot.send_message(call.from_user.id, 'Хотите что-то еще более уникальное? Подберите другой букет из нашей коллекции или закажите консультацию флориста)', reply_markup=markup)
+
+
+
 @bot.callback_query_handler(func=lambda call: call.data == 'Следующий букет')
 def show_next_bouquet(call):
     global bouquets, current_index
@@ -143,7 +172,10 @@ def show_next_bouquet(call):
         current_index = 0
 
     next_bouquet = bouquets[current_index]
-    bot.send_photo(call.from_user.id, photo=next_bouquet.image)
+    #with open(next_bouquet.image.url , 'rb') as file:
+    #    bot.send_photo(call.from_user.id , file)
+    bot.send_photo(call.from_user.id, photo=next_bouquet.image.open(mode='rb'))
+    #bot.send_photo(call.from_user.id, photo=next_bouquet.image)
     bot.send_message(call.from_user.id, f'{next_bouquet.name}\nЦена: {next_bouquet.price}р.')
     bot.send_message(call.from_user.id, next_bouquet.get_info())
 
@@ -199,7 +231,7 @@ def call_consult(call):
                                           text='Выбрать букеты')
         markup.add(btn1)
         bot.send_message(call.from_user.id, "Флорист скоро свяжется с вами. А пока можете присмотреть что-нибудь из готовой коллекции:", reply_markup=markup)
-        bot.register_next_step_handler(call, choose_bouquet_or_consult)
+        bot.register_next_step_handler(call, choose_bouquet_after_consult)
     except:
         markup = types.InlineKeyboardMarkup()
         bot.send_message(call.from_user.id, "Неправильно ввели телефон, попробуйте ещё раз:", reply_markup=markup)
@@ -209,11 +241,11 @@ def call_consult(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('Заказать букет'))
-def get_user_name_surname(message):
+def get_user_name_surname(call):
     markup = types.InlineKeyboardMarkup()
     btn = types.InlineKeyboardButton(callback_data='Вернуться в главное меню ⬅️', text='Вернуться в главное меню ⬅️')
     markup.add(btn)
-    msg  = bot.send_message(message.from_user.id, "Введите ваши ФИО:", reply_markup=markup)
+    msg  = bot.send_message(call.from_user.id, "Введите ваши ФИО:", reply_markup=markup)
     bot.register_next_step_handler(msg, get_address)
     order['bouquet'] = bouquets[current_index]
 
